@@ -27,17 +27,17 @@ def iterNetflows(fname):
             yield Netflow( *x.decode('utf8').strip().split('\t') )
 
 
-def iterateData(siteId):
+def iterateData(pathname, siteId):
     #cnt = 0
-    dirname = "/Users/oneil/Desktop/FiveSigma/netflows-noRun/%s" % siteId
+    dirname = pathname % siteId
     for fname in iterdir(dirname):
         if fname.endswith(".txt.gz"):
             for nf in iterNetflows(fname):
                 yield nf
 
-def iterateNetworkDataImpl(siteId, maxCount=None):
+def iterateNetworkDataImpl(pathname, siteId, maxCount=None):
     cnt = 0
-    dirname = "/Users/oneil/Desktop/FiveSigma/netflows-noRun/%s" % siteId
+    dirname = pathname % siteId
     for fname in iterdir(dirname):
         if fname.endswith(".txt.gz"):
             for nf in iterNetflows(fname):
@@ -49,14 +49,14 @@ def iterateNetworkDataImpl(siteId, maxCount=None):
                     yield nf
     print("iterated %i netflows - completed" % cnt)
 
-def iterateNetworkData(siteId, maxCount=None):
+def iterateNetworkData(pathname, siteId, maxCount=None):
     startTime = datetime.now().timestamp()
-    it = iterateNetworkDataImpl(siteId, maxCount)
+    it = iterateNetworkDataImpl(pathname, siteId, maxCount)
     nf = next(it)
     offset = startTime - nf.timestamp
     nf.timestamp = startTime
     yield nf
-    for nf in iterateNetworkDataImpl(siteId, maxCount):
+    for nf in it:
         nf.timestamp += offset
         yield nf
         
@@ -65,9 +65,9 @@ def processFile(fname):
     print("start processFile:", fname)
     return [nf for nf in iterNetflows(fname) if nf.inNetwork()]
 
-def iterateNetworkDataParallel(siteId, maxCount=None):
+def iterateNetworkDataParallel(pathname, siteId, maxCount=None):
     cnt = 0
-    dirname = "/Users/oneil/Desktop/FiveSigma/netflows-noRun/%s" % siteId
+    dirname = pathname % siteId
     it = [fname for fname in iterdir(dirname) if fname.endswith(".txt.gz")]
     numthreads = 8
     # create the process pool
@@ -82,11 +82,11 @@ def iterateNetworkDataParallel(siteId, maxCount=None):
     print("iterated %i netflows - completed" % cnt)
     
 
-def iterateNetworkDataWithPortScanning(siteId, insertionFreq=0.01, maxCount=None):
+def iterateNetworkDataWithPortScanning(pathname, siteId, insertionFreq=0.01, maxCount=None):
     portScanner = "10.10.10.10"
-    it = iterateNetworkData(siteId, maxCount)
+    it = iterateNetworkData(pathname, siteId, maxCount)
     ipPortSet = set()
-    dirname = "/Users/oneil/Desktop/FiveSigma/netflows-noRun/%s" % siteId
+    dirname = pathname % siteId
     for nf in it:
         srcip = nf.srcip
         dstip = nf.dstip
