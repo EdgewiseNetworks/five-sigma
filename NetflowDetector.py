@@ -60,6 +60,9 @@ class TimePeriodMap(object):
     
     def getActives(self):
         return list( k for k, v in self.map.items() if v.active() )
+    
+    def keys(self):
+        return self.map.keys()
 
 def timestampToDatetime(timestamp):
     return datetime.fromtimestamp(timestamp)
@@ -132,4 +135,5 @@ class NetflowDetector(object):
         return self.timePeriodMap.getActives()
     
     def getExtremeCounts(self):
-        return len(self.getExtremes()), len(self.timePeriodMap)
+        return {"extreme": len(self.getExtremes()), 
+                "previously extreme": len(self.timePeriodMap) }

@@ -28,7 +28,6 @@ def iterNetflows(fname):
 
 
 def iterateData(pathname, siteId):
-    #cnt = 0
     dirname = pathname % siteId
     for fname in iterdir(dirname):
         if fname.endswith(".txt.gz"):

@@ -13,7 +13,8 @@ from Netflows import Netflow
 from HLL import HyperLogLog
 from NetflowDetector import NetflowDetector, timestampToDatetime
 from heapq import heappush, heappop, heappushpop
-from IncrementalLeastSquares import ILS, UpdatingSimpleLinearRegression
+from IncrementalLeastSquares import ILS
+from Windowing import AverageWindow, SlopeWindow
 
 maxfloat = float_info.max
 inf = float('inf')
@@ -39,19 +40,21 @@ class HostStabilizationDetector(NetflowDetector):
         not appropriate.
     """
     __slots__ = ('longCardDict', 'slopeDict', 'avgDict', 'totalCount', 
-                 'updatePeriod', 'tolerance', 'frozenHosts', 'everFrozen')
+                 'updatePeriod', 'tolerance', 'frozenHosts', 'everFrozen', 'prevLongCard')
 
     def __init__(self, sigmaCount=5, period=86400, tolerance=0.001):
         super().__init__(sigmaCount, period=period)
         self.longCardDict = defaultdict(lambda: HyperLogLog(16))
+        self.prevLongCard = {}
         self.slopeDict = defaultdict(lambda: ILS())
-        #self.slopeDict = defaultdict(lambda: UpdatingSimpleLinearRegression())
+        #self.slopeDict = defaultdict(lambda: SlopeWindow())
         self.avgDict = defaultdict(lambda: Stdev())
+        #self.avgDict = defaultdict(lambda: AverageWindow())
         self.totalCount = 0
         self.updatePeriod = 0
         self.tolerance = tolerance
         self.frozenHosts = set()
-        self.everFrozen = HyperLogLog(16)
+        self.everFrozen = set() #HyperLogLog(16)
     
     def addNetflow(self, netflow):
         srcip = netflow.getSourceIpString()
@@ -84,19 +87,26 @@ class HostStabilizationDetector(NetflowDetector):
         self.updatePeriod += 1
         for key, hll in self.longCardDict.items():
             N_obs = hll.cardinality()
+            newObs = N_obs - self.prevLongCard.get(key, 0)
+            self.prevLongCard[key] = N_obs
             # add to slope and average
-            self.avgDict[key].add(N_obs)
-            self.slopeDict[key].update(N_obs, self.updatePeriod)
+            self.avgDict[key].add(newObs)
+            self.slopeDict[key].update(newObs, self.updatePeriod)
+            #self.slopeDict[key].add(N_obs)
             # get new slope and average
             avg = self.avgDict[key].getMean()
+            #avg = self.avgDict[key].estimate()
             slope, intercept = self.slopeDict[key].estimate()
-            N_rem = slope * avg
-            if intercept == inf:
+            #slope = self.slopeDict[key].estimate()
+            #intercept = 0
+            N_rem = - slope * avg
+            if intercept == inf or slope == inf:
                 continue
-            elif N_rem < 0:
+            elif N_rem < -self.tolerance:
                 # slope is positive; N_rem is negative
-                print(key, "has a negative slope, and N_rem estimate is negative. Slope =", slope)
-            elif N_rem <= self.tolerance and key not in self.frozenHosts:
+                print(key, "has a positive slope, and N_rem estimate is negative. ", \
+                      "N_rem=%f slope=%f" % (N_rem, slope))
+            elif abs(N_rem) <= self.tolerance and key not in self.frozenHosts:
                 self.frozenHosts.add(key)
                 outliers[key] = True
                 self.everFrozen.add(key)
@@ -115,7 +125,22 @@ class HostStabilizationDetector(NetflowDetector):
         return sorted(reg.estimate()[0] for reg in self.slopeDict.values())
     
     def getExtremes(self):
-        return frozenset(self.longCardDict.keys()) - self.frozenHosts
+        #return frozenset(self.longCardDict.keys()) - self.frozenHosts
+        return self.getUnfrozens()
     
     def getExtremeCounts(self):
-        return len(self.getExtremes()), int(self.everFrozen.cardinality())
+        #return len(self.getExtremes()), int(self.everFrozen.cardinality())
+        #return len(self.getExtremes()), len(self.everFrozen)
+        return {"unfrozen":len(self.getUnfrozens()), 
+                "never frozen":len(self.getNeverFrozens()), 
+                "frozen": len(self.getFrozens()) }
+    
+    def getFrozens(self):
+        return self.frozenHosts
+    
+    def getUnfrozens(self):
+        return self.everFrozen - self.frozenHosts
+    
+    def getNeverFrozens(self):
+        return frozenset(self.longCardDict.keys()) - self.everFrozen
+        
